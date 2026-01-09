@@ -7,6 +7,7 @@ python-multipart==0.0.12
 groq==0.9.0
 httpx==0.27.0
 langchain==0.3.7
+langchain-huggingface
 langchain-community==0.3.5
 chromadb==0.5.18
 sentence-transformers==3.2.1
