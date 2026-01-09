@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     chunk_size: int = 1000
     chunk_overlap: int = 200
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    llm_model: str = "llama-3.1-70b-versatile"
+    llm_model: str = "llama-3.3-70b-versatile"
     vision_model: str = "llama-3.2-90b-vision-preview"
     
     @validator('groq_api_key')
