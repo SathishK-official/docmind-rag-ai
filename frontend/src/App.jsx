@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, MessageSquare, Mic, Volume2, Sun, Moon, 
   Copy, Download, Send, Loader, AlertCircle, CheckCircle,
-  MicOff, VolumeX, Radio
+  MicOff, VolumeX, Radio, Zap
 } from 'lucide-react';
 import FileUpload from './components/FileUpload';
 import ProcessingStatus from './components/ProcessingStatus';
@@ -19,13 +19,14 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [language, setLanguage] = useState('en');
-  const [conversationMode, setConversationMode] = useState(false); // NEW: Auto voice mode
+  const [conversationMode, setConversationMode] = useState(false);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [error, setError] = useState('');
   
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
+  const shouldAutoListenRef = useRef(false);
   
   // Scroll to bottom
   const scrollToBottom = () => {
@@ -51,20 +52,23 @@ function App() {
     if (!audio) return;
     
     const handleAudioEnd = () => {
+      console.log('🔊 Audio playback ended');
       setSpeaking(false);
       
       // Auto-restart listening in conversation mode
-      if (conversationMode && sessionId) {
+      if (shouldAutoListenRef.current && conversationMode && sessionId && !listening) {
+        console.log('🔄 Auto-restarting voice input in 800ms...');
         setTimeout(() => {
-          console.log('🔄 Auto-restarting voice input...');
-          handleVoiceInput();
-        }, 500); // Small delay before restarting
+          if (conversationMode) {
+            handleVoiceInput();
+          }
+        }, 800);
       }
     };
     
     audio.addEventListener('ended', handleAudioEnd);
     return () => audio.removeEventListener('ended', handleAudioEnd);
-  }, [conversationMode, sessionId]);
+  }, [conversationMode, sessionId, listening]);
   
   // Handle file upload
   const handleFileUpload = async (file) => {
@@ -90,23 +94,31 @@ function App() {
   // Handle query submission
   const handleSubmit = async (e, isVoiceInput = false) => {
     e?.preventDefault();
-    if (!question.trim() || !sessionId || loading) return;
+    
+    const currentQuestion = question.trim();
+    if (!currentQuestion || !sessionId || loading) {
+      console.log('Cannot submit:', { currentQuestion, sessionId, loading });
+      return;
+    }
+    
+    console.log('📤 Submitting question:', currentQuestion);
     
     const userMessage = {
       type: 'user',
-      content: question,
+      content: currentQuestion,
       timestamp: new Date(),
       isVoice: isVoiceInput
     };
     
     setMessages(prev => [...prev, userMessage]);
-    const currentQuestion = question;
     setQuestion('');
     setLoading(true);
     setError('');
     
     try {
+      console.log('🤖 Querying AI...');
       const response = await queryDocument(sessionId, currentQuestion, language);
+      console.log('✅ Got response:', response.answer.substring(0, 50) + '...');
       
       const aiMessage = {
         type: 'ai',
@@ -118,15 +130,21 @@ function App() {
       
       // Auto-play voice response if user used voice OR conversation mode is on
       if (isVoiceInput || conversationMode) {
+        console.log('🔊 Playing voice response...');
+        shouldAutoListenRef.current = true;
         await playVoiceResponse(response.answer);
+      } else {
+        shouldAutoListenRef.current = false;
       }
     } catch (err) {
+      console.error('❌ Query error:', err);
       setError(err.response?.data?.detail || err.message || 'Failed to get response');
       setMessages(prev => [...prev, {
         type: 'error',
         content: 'Sorry, I encountered an error. Please try again.',
         timestamp: new Date()
       }]);
+      shouldAutoListenRef.current = false;
     } finally {
       setLoading(false);
     }
@@ -136,49 +154,61 @@ function App() {
   const playVoiceResponse = async (text) => {
     try {
       setSpeaking(true);
+      console.log('🎵 Generating audio...');
       const audioBlob = await textToSpeech(text, language);
       const audioUrl = URL.createObjectURL(audioBlob);
       
       if (audioRef.current) {
         audioRef.current.src = audioUrl;
+        console.log('▶️ Playing audio...');
         await audioRef.current.play();
       }
     } catch (err) {
       console.error('TTS error:', err);
       setSpeaking(false);
+      shouldAutoListenRef.current = false;
     }
   };
   
   // Handle voice input
   const handleVoiceInput = () => {
     if (listening) {
+      console.log('🛑 Stopping voice recognition');
       stopVoiceRecognition();
       setListening(false);
       return;
     }
     
+    console.log('🎤 Starting voice recognition...');
     const success = startVoiceRecognition(
       (transcript) => {
+        console.log('✅ Voice recognized:', transcript);
         setQuestion(transcript);
         setListening(false);
         
-        // Auto-submit in conversation mode
-        if (conversationMode) {
+        // Auto-submit in conversation mode or when voice was used
+        if (conversationMode || transcript) {
+          console.log('📨 Auto-submitting in 500ms...');
           setTimeout(() => {
-            handleSubmit(null, true);
-          }, 300);
+            // Create synthetic event
+            handleSubmit({ preventDefault: () => {} }, true);
+          }, 500);
         }
       },
       (error) => {
-        console.error('Speech recognition error:', error);
+        console.error('❌ Speech recognition error:', error);
         setError(error);
         setListening(false);
+        shouldAutoListenRef.current = false;
       }
     );
     
     if (success) {
       setListening(true);
       setError('');
+    } else {
+      setError('Failed to start voice recognition. Please check microphone permissions.');
+      shouldAutoListenRef.current = false;
     }
   };
   
@@ -186,16 +216,21 @@ function App() {
   const toggleConversationMode = () => {
     if (!conversationMode) {
       // Entering conversation mode
+      console.log('🔴 ENTERING CONVERSATION MODE');
       setConversationMode(true);
       setError('');
+      shouldAutoListenRef.current = true;
       
       // Auto-start listening
       if (sessionId) {
-        setTimeout(() => handleVoiceInput(), 500);
+        setTimeout(() => handleVoiceInput(), 800);
       }
     } else {
       // Exiting conversation mode
+      console.log('⚫ EXITING CONVERSATION MODE');
       setConversationMode(false);
+      shouldAutoListenRef.current = false;
+      
       if (listening) {
         stopVoiceRecognition();
         setListening(false);
@@ -217,6 +252,7 @@ function App() {
       }
     } else {
       // Play speech
+      shouldAutoListenRef.current = false;
       await playVoiceResponse(text);
     }
   };
@@ -244,45 +280,20 @@ function App() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black dark:from-black dark:via-gray-900 dark:to-gray-800 text-white transition-all duration-300">
       {/* Header */}
       <header className="border-b border-red-500/20 bg-black/30 backdrop-blur-md sticky top-0 z-10">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="text-4xl">🌋</div>
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 bg-clip-text text-transparent">
-                VolcanoRAG
-              </h1>
-              <p className="text-sm text-gray-400">AI Document Assistant</p>
+        <div className="container mx-auto px-4 py-4">
+          {/* Top Row - Logo and Theme */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="text-4xl">🌋</div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 bg-clip-text text-transparent">
+                  VolcanoRAG
+                </h1>
+                <p className="text-sm text-gray-400">AI Document Assistant with Voice</p>
+              </div>
             </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            {/* Language Toggle */}
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-gray-800 border border-orange-500/30 text-sm focus:border-orange-500 focus:outline-none"
-            >
-              <option value="en">English</option>
-              <option value="ta">Tanglish</option>
-            </select>
             
-            {/* Conversation Mode Toggle - NEW */}
-            {sessionId && (
-              <button
-                onClick={toggleConversationMode}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-2 text-sm font-semibold ${
-                  conversationMode 
-                    ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white shadow-lg shadow-orange-500/50 animate-pulse' 
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                }`}
-                title={conversationMode ? 'Conversation mode ON - Click to disable' : 'Click for hands-free conversation'}
-              >
-                <Radio size={16} className={conversationMode ? 'animate-pulse' : ''} />
-                {conversationMode ? 'LIVE' : 'Voice Mode'}
-              </button>
-            )}
-            
-            {/* Dark Mode Toggle */}
+            {/* Dark Mode Toggle - Keep on right */}
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-all"
@@ -291,12 +302,73 @@ function App() {
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
           </div>
+          
+          {/* Bottom Row - Main Controls on LEFT */}
+          {sessionId && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Conversation Mode Toggle - PROMINENT on LEFT */}
+              <button
+                onClick={toggleConversationMode}
+                className={`px-6 py-3 rounded-lg transition-all flex items-center gap-3 text-base font-bold shadow-lg ${
+                  conversationMode 
+                    ? 'bg-gradient-to-r from-red-600 via-orange-600 to-yellow-600 text-white shadow-orange-500/50 animate-pulse scale-110' 
+                    : 'bg-gradient-to-r from-gray-700 to-gray-800 text-gray-300 hover:from-gray-600 hover:to-gray-700 hover:scale-105'
+                }`}
+                title={conversationMode ? 'Click to stop conversation mode' : 'Click for hands-free voice conversation'}
+              >
+                {conversationMode ? (
+                  <>
+                    <Radio size={24} className="animate-pulse" />
+                    <span>🔴 LIVE CONVERSATION</span>
+                    <Zap size={20} className="animate-bounce" />
+                  </>
+                ) : (
+                  <>
+                    <Mic size={20} />
+                    <span>Start Voice Conversation</span>
+                  </>
+                )}
+              </button>
+              
+              {/* Language Selector */}
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="px-4 py-3 rounded-lg bg-gray-800 border border-orange-500/30 text-base font-semibold focus:border-orange-500 focus:outline-none shadow-md hover:bg-gray-700 transition-all"
+              >
+                <option value="en">🇺🇸 English</option>
+                <option value="ta">🇮🇳 Tanglish</option>
+              </select>
+              
+              {/* Status Badges */}
+              {listening && (
+                <div className="px-4 py-2 bg-red-600/80 rounded-lg flex items-center gap-2 animate-pulse">
+                  <div className="w-3 h-3 bg-white rounded-full animate-ping" />
+                  <span className="font-semibold">Listening...</span>
+                </div>
+              )}
+              
+              {loading && (
+                <div className="px-4 py-2 bg-orange-600/80 rounded-lg flex items-center gap-2">
+                  <Loader size={16} className="animate-spin" />
+                  <span className="font-semibold">Thinking...</span>
+                </div>
+              )}
+              
+              {speaking && (
+                <div className="px-4 py-2 bg-green-600/80 rounded-lg flex items-center gap-2 animate-pulse">
+                  <Volume2 size={16} className="animate-bounce" />
+                  <span className="font-semibold">Speaking...</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         
         {/* Conversation Mode Banner */}
         {conversationMode && (
-          <div className="bg-gradient-to-r from-red-600 via-orange-600 to-yellow-600 py-2 px-4 text-center text-sm font-semibold animate-pulse">
-            🎤 Conversation Mode Active - Speak naturally, AI will respond with voice automatically
+          <div className="bg-gradient-to-r from-red-600 via-orange-600 to-yellow-600 py-3 px-4 text-center font-bold animate-pulse">
+            🎤 CONVERSATION MODE ACTIVE - Speak naturally, I will respond automatically with voice! 🔊
           </div>
         )}
       </header>
@@ -355,32 +427,6 @@ function App() {
               </div>
             </div>
             
-            {/* Status Indicators */}
-            {(listening || speaking || loading) && (
-              <div className="bg-gray-800/50 rounded-lg p-4 border border-orange-500/30">
-                <div className="flex items-center justify-center gap-4">
-                  {listening && (
-                    <div className="flex items-center gap-2 text-red-500">
-                      <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                      <span className="font-semibold">Listening...</span>
-                    </div>
-                  )}
-                  {loading && (
-                    <div className="flex items-center gap-2 text-orange-500">
-                      <Loader size={16} className="animate-spin" />
-                      <span className="font-semibold">Thinking...</span>
-                    </div>
-                  )}
-                  {speaking && (
-                    <div className="flex items-center gap-2 text-green-500">
-                      <Volume2 size={16} className="animate-pulse" />
-                      <span className="font-semibold">Speaking...</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            
             {/* Error Display */}
             {error && (
               <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2">
@@ -395,8 +441,8 @@ function App() {
                 <div className="h-full flex items-center justify-center text-gray-500">
                   <div className="text-center">
                     <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                    <p className="text-lg">Ask me anything about your document!</p>
-                    <p className="text-sm mt-2">💡 Enable Voice Mode for hands-free conversation</p>
+                    <p className="text-lg mb-2">Ask me anything about your document!</p>
+                    <p className="text-sm">💡 Click <strong>"Start Voice Conversation"</strong> for hands-free mode</p>
                   </div>
                 </div>
               ) : (
@@ -433,18 +479,20 @@ function App() {
                               {!conversationMode && (
                                 <button
                                   onClick={() => handleManualVoiceOutput(msg.content)}
-                                  className="text-xs hover:text-green-400 transition-colors flex items-center gap-1"
+                                  className="text-xs hover:text-green-400 transition-colors flex items-center gap-1 px-2 py-1 bg-white/10 rounded hover:bg-white/20"
                                   title={speaking ? 'Stop reading' : 'Read aloud'}
                                 >
                                   {speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                                  <span>Read</span>
                                 </button>
                               )}
                               <button
                                 onClick={() => copyToClipboard(msg.content)}
-                                className="text-xs hover:text-yellow-400 transition-colors flex items-center gap-1"
+                                className="text-xs hover:text-yellow-400 transition-colors flex items-center gap-1 px-2 py-1 bg-white/10 rounded hover:bg-white/20"
                                 title="Copy to clipboard"
                               >
                                 <Copy size={14} />
+                                <span>Copy</span>
                               </button>
                             </div>
                           )}
@@ -499,18 +547,21 @@ function App() {
             
             {/* Conversation Mode Instructions */}
             {conversationMode && (
-              <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border border-orange-500/30 rounded-lg p-4 text-center">
-                <p className="text-sm">
-                  🎤 <strong>Speak naturally</strong> - I'm listening and will respond automatically
+              <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border-2 border-orange-500/50 rounded-lg p-6 text-center">
+                <p className="text-lg font-bold mb-2">
+                  🎤 I'm listening! Speak your question...
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
-                  Click "LIVE" button above to exit conversation mode
+                <p className="text-sm text-gray-300">
+                  I will respond with voice automatically and continue listening
+                </p>
+                <p className="text-xs text-gray-400 mt-3">
+                  Click the <strong>"🔴 LIVE CONVERSATION"</strong> button above to exit
                 </p>
               </div>
             )}
             
             {/* Actions */}
-            {messages.length > 0 && (
+            {messages.length > 0 && !conversationMode && (
               <div className="flex justify-end gap-2">
                 <button
                   onClick={downloadTranscript}
@@ -537,4 +588,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;import
