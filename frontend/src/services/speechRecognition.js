@@ -2,118 +2,115 @@ let recognition = null;
 let isRecognizing = false;
 
 export const startVoiceRecognition = (onResult, onError) => {
-  // Check browser support
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   
   if (!SpeechRecognition) {
-    onError('Speech recognition not supported. Please use Chrome or Edge.');
+    onError('Voice not supported. Use Chrome or Edge.');
     return false;
   }
 
-  // Stop any existing recognition
   if (recognition && isRecognizing) {
     try {
       recognition.stop();
+      isRecognizing = false;
     } catch (e) {
-      console.log('Error stopping existing recognition:', e);
+      console.log('Stop error:', e);
     }
+    // Wait a bit before starting new
+    setTimeout(() => startNewRecognition(), 200);
+    return true;
   }
 
-  // Create new recognition instance
-  recognition = new SpeechRecognition();
+  return startNewRecognition();
   
-  // Configuration - ALWAYS use English for recognition
-  // This works for both English and Tanglish (Tamil words spoken in English)
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US'; // Keep English - it recognizes Tanglish too!
-  recognition.maxAlternatives = 1;
-
-  // Event: Recognition starts
-  recognition.onstart = () => {
-    isRecognizing = true;
-    console.log('🎤 Voice recognition started. Speak in English or Tanglish...');
-  };
-
-  // Event: Speech recognized
-  recognition.onresult = (event) => {
-    isRecognizing = false;
-    const transcript = event.results[0][0].transcript;
-    const confidence = event.results[0][0].confidence;
+  function startNewRecognition() {
+    recognition = new SpeechRecognition();
     
-    console.log('✓ Recognized:', transcript);
-    console.log('✓ Confidence:', confidence);
+    // CRITICAL: Use English recognition for both English AND Tanglish
+    // English recognition can pick up Tamil words spoken in English
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 3; // Get multiple interpretations
     
-    // Check if we got something
-    if (transcript && transcript.trim().length > 0) {
-      onResult(transcript);
-    } else {
-      console.log('⚠️ Empty transcript');
-      onError('No speech detected. Please speak louder or try again.');
+    recognition.onstart = () => {
+      isRecognizing = true;
+      console.log('🎤 LISTENING - Speak now!');
+    };
+
+    recognition.onresult = (event) => {
+      isRecognizing = false;
+      
+      // Get all alternatives
+      const results = event.results[0];
+      const alternatives = [];
+      
+      for (let i = 0; i < results.length; i++) {
+        alternatives.push({
+          transcript: results[i].transcript,
+          confidence: results[i].confidence
+        });
+      }
+      
+      console.log('✅ RECOGNIZED:');
+      alternatives.forEach((alt, i) => {
+        console.log(`  ${i + 1}. "${alt.transcript}" (${(alt.confidence * 100).toFixed(0)}%)`);
+      });
+      
+      // Use the best result
+      const transcript = results[0].transcript;
+      const confidence = results[0].confidence;
+      
+      if (transcript && transcript.trim().length > 0) {
+        console.log(`✓ Using: "${transcript}"`);
+        onResult(transcript);
+      } else {
+        console.log('⚠️ Empty result');
+        onError('No speech detected. Try speaking louder.');
+      }
+    };
+
+    recognition.onspeechend = () => {
+      console.log('Speech ended');
+    };
+
+    recognition.onend = () => {
+      isRecognizing = false;
+      console.log('Recognition ended');
+    };
+
+    recognition.onerror = (event) => {
+      isRecognizing = false;
+      console.error('❌ Error:', event.error);
+      
+      const errors = {
+        'no-speech': 'No speech detected. Please speak clearly within 5 seconds.',
+        'audio-capture': 'Microphone not found. Please connect a microphone.',
+        'not-allowed': 'Microphone blocked! Click 🔒 in address bar → Allow microphone → Refresh page.',
+        'network': 'Internet error. Voice recognition needs internet connection.',
+        'aborted': 'Recognition stopped.',
+        'language-not-supported': 'Language not supported.',
+      };
+      
+      const message = errors[event.error] || `Error: ${event.error}. Please try again.`;
+      onError(message);
+    };
+
+    try {
+      recognition.start();
+      console.log('🎙️ Microphone ON');
+      return true;
+    } catch (error) {
+      isRecognizing = false;
+      console.error('Start failed:', error);
+      
+      if (error.message && error.message.includes('already started')) {
+        onError('Already listening. Please wait.');
+      } else {
+        onError('Cannot start microphone. Refresh page and try again.');
+      }
+      return false;
     }
-  };
-
-  // Event: No speech detected
-  recognition.onspeechend = () => {
-    console.log('Speech ended, processing...');
-    // Don't stop immediately - let onresult handle it
-  };
-
-  // Event: Recognition ends
-  recognition.onend = () => {
-    isRecognizing = false;
-    console.log('Voice recognition ended');
-  };
-
-  // Event: Error occurred
-  recognition.onerror = (event) => {
-    isRecognizing = false;
-    console.error('Speech recognition error:', event.error);
-    
-    // Handle different error types
-    let errorMessage = 'Voice recognition failed.';
-    
-    switch(event.error) {
-      case 'no-speech':
-        errorMessage = 'No speech detected. Please speak clearly and try again.';
-        break;
-      case 'audio-capture':
-        errorMessage = 'No microphone found. Please check your microphone is connected.';
-        break;
-      case 'not-allowed':
-        errorMessage = 'Microphone permission denied. Click the lock icon 🔒 in address bar and allow microphone.';
-        break;
-      case 'network':
-        errorMessage = 'Network error. Speech recognition needs internet. Please check your connection.';
-        break;
-      case 'aborted':
-        errorMessage = 'Speech recognition aborted.';
-        break;
-      case 'language-not-supported':
-        errorMessage = 'Language not supported.';
-        break;
-      default:
-        errorMessage = `Voice recognition error: ${event.error}. Please try again.`;
-    }
-    
-    onError(errorMessage);
-  };
-
-  // Start recognition
-  try {
-    recognition.start();
-    console.log('🎙️ Microphone activated - Start speaking...');
-    return true;
-  } catch (error) {
-    isRecognizing = false;
-    console.error('Failed to start recognition:', error);
-    
-    if (error.message && error.message.includes('already started')) {
-      onError('Voice recognition already running. Please wait a moment and try again.');
-    } else {
-      onError('Failed to start voice recognition. Please refresh the page and try again.');
-    }
-    return false;
   }
 };
 
@@ -122,28 +119,26 @@ export const stopVoiceRecognition = () => {
     try {
       recognition.stop();
       isRecognizing = false;
-      console.log('🛑 Voice recognition stopped by user');
+      console.log('🛑 Microphone OFF');
     } catch (error) {
-      console.error('Error stopping recognition:', error);
+      console.error('Stop error:', error);
     }
   }
   recognition = null;
 };
 
-// Check if browser supports speech recognition
 export const isSpeechRecognitionSupported = () => {
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 };
 
-// Request microphone permission
 export const requestMicrophonePermission = async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     stream.getTracks().forEach(track => track.stop());
-    console.log('✓ Microphone permission granted');
+    console.log('✓ Microphone permission OK');
     return true;
   } catch (error) {
-    console.error('✗ Microphone permission denied:', error);
+    console.error('✗ Microphone denied:', error);
     return false;
   }
 };
