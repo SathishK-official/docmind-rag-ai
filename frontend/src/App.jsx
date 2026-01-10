@@ -10,7 +10,6 @@ import { uploadDocument, queryDocument, textToSpeech } from './services/api';
 import { startVoiceRecognition, stopVoiceRecognition } from './services/speechRecognition';
 
 function App() {
-  // State
   const [sessionId, setSessionId] = useState(null);
   const [fileName, setFileName] = useState('');
   const [messages, setMessages] = useState([]);
@@ -28,7 +27,6 @@ function App() {
   const audioRef = useRef(null);
   const shouldAutoListenRef = useRef(false);
   
-  // Scroll to bottom
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -37,7 +35,6 @@ function App() {
     scrollToBottom();
   }, [messages]);
   
-  // Toggle dark mode
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -46,7 +43,6 @@ function App() {
     }
   }, [darkMode]);
   
-  // Audio ended event - restart listening in conversation mode
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -55,7 +51,6 @@ function App() {
       console.log('🔊 Audio playback ended');
       setSpeaking(false);
       
-      // Auto-restart listening in conversation mode
       if (shouldAutoListenRef.current && conversationMode && sessionId && !listening) {
         console.log('🔄 Auto-restarting voice input in 800ms...');
         setTimeout(() => {
@@ -70,7 +65,6 @@ function App() {
     return () => audio.removeEventListener('ended', handleAudioEnd);
   }, [conversationMode, sessionId, listening]);
   
-  // Handle file upload
   const handleFileUpload = async (file) => {
     setProcessing(true);
     setError('');
@@ -91,7 +85,6 @@ function App() {
     }
   };
   
-  // Handle query submission
   const handleSubmit = async (e, isVoiceInput = false) => {
     e?.preventDefault();
     
@@ -128,7 +121,6 @@ function App() {
       
       setMessages(prev => [...prev, aiMessage]);
       
-      // Auto-play voice response if user used voice OR conversation mode is on
       if (isVoiceInput || conversationMode) {
         console.log('🔊 Playing voice response...');
         shouldAutoListenRef.current = true;
@@ -150,7 +142,6 @@ function App() {
     }
   };
   
-  // Play voice response
   const playVoiceResponse = async (text) => {
     try {
       setSpeaking(true);
@@ -170,7 +161,6 @@ function App() {
     }
   };
   
-  // Handle voice input
   const handleVoiceInput = () => {
     if (listening) {
       console.log('🛑 Stopping voice recognition');
@@ -186,11 +176,9 @@ function App() {
         setQuestion(transcript);
         setListening(false);
         
-        // Auto-submit in conversation mode or when voice was used
         if (conversationMode || transcript) {
           console.log('📨 Auto-submitting in 500ms...');
           setTimeout(() => {
-            // Create synthetic event
             handleSubmit({ preventDefault: () => {} }, true);
           }, 500);
         }
@@ -212,21 +200,17 @@ function App() {
     }
   };
   
-  // Toggle conversation mode
   const toggleConversationMode = () => {
     if (!conversationMode) {
-      // Entering conversation mode
       console.log('🔴 ENTERING CONVERSATION MODE');
       setConversationMode(true);
       setError('');
       shouldAutoListenRef.current = true;
       
-      // Auto-start listening
       if (sessionId) {
         setTimeout(() => handleVoiceInput(), 800);
       }
     } else {
-      // Exiting conversation mode
       console.log('⚫ EXITING CONVERSATION MODE');
       setConversationMode(false);
       shouldAutoListenRef.current = false;
@@ -242,27 +226,22 @@ function App() {
     }
   };
   
-  // Manual voice output (for text input)
   const handleManualVoiceOutput = async (text) => {
     if (speaking) {
-      // Stop current speech
       if (audioRef.current) {
         audioRef.current.pause();
         setSpeaking(false);
       }
     } else {
-      // Play speech
       shouldAutoListenRef.current = false;
       await playVoiceResponse(text);
     }
   };
   
-  // Copy to clipboard
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
   };
   
-  // Download transcript
   const downloadTranscript = () => {
     const transcript = messages
       .map(m => `[${m.type.toUpperCase()}] ${m.content}`)
@@ -278,10 +257,8 @@ function App() {
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black dark:from-black dark:via-gray-900 dark:to-gray-800 text-white transition-all duration-300">
-      {/* Header */}
       <header className="border-b border-red-500/20 bg-black/30 backdrop-blur-md sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
-          {/* Top Row - Logo and Theme */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="text-4xl">🌋</div>
@@ -293,7 +270,6 @@ function App() {
               </div>
             </div>
             
-            {/* Dark Mode Toggle - Keep on right */}
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 rounded-lg bg-gray-800 hover:bg-gray-700 transition-all"
@@ -303,10 +279,8 @@ function App() {
             </button>
           </div>
           
-          {/* Bottom Row - Main Controls on LEFT */}
           {sessionId && (
             <div className="flex items-center gap-3 flex-wrap">
-              {/* Conversation Mode Toggle - PROMINENT on LEFT */}
               <button
                 onClick={toggleConversationMode}
                 className={`px-6 py-3 rounded-lg transition-all flex items-center gap-3 text-base font-bold shadow-lg ${
@@ -330,7 +304,6 @@ function App() {
                 )}
               </button>
               
-              {/* Language Selector */}
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
@@ -340,7 +313,6 @@ function App() {
                 <option value="ta">🇮🇳 Tanglish</option>
               </select>
               
-              {/* Status Badges */}
               {listening && (
                 <div className="px-4 py-2 bg-red-600/80 rounded-lg flex items-center gap-2 animate-pulse">
                   <div className="w-3 h-3 bg-white rounded-full animate-ping" />
@@ -365,7 +337,6 @@ function App() {
           )}
         </div>
         
-        {/* Conversation Mode Banner */}
         {conversationMode && (
           <div className="bg-gradient-to-r from-red-600 via-orange-600 to-yellow-600 py-3 px-4 text-center font-bold animate-pulse">
             🎤 CONVERSATION MODE ACTIVE - Speak naturally, I will respond automatically with voice! 🔊
@@ -373,10 +344,8 @@ function App() {
         )}
       </header>
       
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8 max-w-6xl">
         {!sessionId ? (
-          // Upload Section
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold mb-2">Upload Your Document</h2>
@@ -400,9 +369,7 @@ function App() {
             )}
           </div>
         ) : (
-          // Chat Section
           <div className="grid grid-cols-1 gap-6">
-            {/* Document Info */}
             <div className="bg-gray-800/50 rounded-lg p-4 border border-red-500/20">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -427,7 +394,6 @@ function App() {
               </div>
             </div>
             
-            {/* Error Display */}
             {error && (
               <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2">
                 <AlertCircle size={20} className="text-red-500" />
@@ -435,7 +401,6 @@ function App() {
               </div>
             )}
             
-            {/* Messages */}
             <div className="bg-gray-800/30 rounded-lg border border-orange-500/20 min-h-[400px] max-h-[500px] overflow-y-auto p-6">
               {messages.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-gray-500">
@@ -475,7 +440,6 @@ function App() {
                           </span>
                           {msg.type === 'ai' && (
                             <div className="flex items-center gap-2">
-                              {/* Read Aloud Button for Text Inputs */}
                               {!conversationMode && (
                                 <button
                                   onClick={() => handleManualVoiceOutput(msg.content)}
@@ -505,7 +469,6 @@ function App() {
               )}
             </div>
             
-            {/* Input - Hidden in Conversation Mode */}
             {!conversationMode && (
               <form onSubmit={handleSubmit} className="flex gap-2">
                 <button
@@ -545,7 +508,6 @@ function App() {
               </form>
             )}
             
-            {/* Conversation Mode Instructions */}
             {conversationMode && (
               <div className="bg-gradient-to-r from-orange-600/20 to-red-600/20 border-2 border-orange-500/50 rounded-lg p-6 text-center">
                 <p className="text-lg font-bold mb-2">
@@ -560,7 +522,6 @@ function App() {
               </div>
             )}
             
-            {/* Actions */}
             {messages.length > 0 && !conversationMode && (
               <div className="flex justify-end gap-2">
                 <button
@@ -576,10 +537,8 @@ function App() {
         )}
       </main>
       
-      {/* Audio Element for TTS */}
       <audio ref={audioRef} className="hidden" />
       
-      {/* Footer */}
       <footer className="border-t border-gray-800 mt-12 py-6 text-center text-gray-500 text-sm">
         <p>🌋 VolcanoRAG v2.0 - AI Document Assistant with Voice Conversation</p>
         <p className="mt-1">Powered by Groq, Tesseract, and ChromaDB</p>
@@ -588,4 +547,4 @@ function App() {
   );
 }
 
-export default App;import
+export default App;
