@@ -43,18 +43,15 @@ function App() {
   }, [messages]);
   
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
-  
-  useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     
     const handleAudioEnd = () => {
-      console.log('🔊 Audio finished');
+      console.log('✅ Audio finished playing');
       setSpeaking(false);
       
       if (conversationModeRef.current && sessionId) {
+        console.log('Starting 5 second countdown...');
         startCountdownAndListen();
       }
     };
@@ -64,13 +61,13 @@ function App() {
   }, [sessionId]);
   
   const startCountdownAndListen = () => {
-    console.log('⏳ Starting 5 second countdown...');
     let count = 5;
     setCountdown(count);
     
     countdownTimerRef.current = setInterval(() => {
       count--;
       setCountdown(count);
+      console.log('Countdown:', count);
       
       if (count === 0) {
         clearInterval(countdownTimerRef.current);
@@ -83,19 +80,20 @@ function App() {
   const startListeningCycle = () => {
     if (!conversationModeRef.current) return;
     
-    console.log('🎤 Starting listening (5 sec window)...');
+    console.log('🎤 Listening for 5 seconds...');
     setListening(true);
     
     const success = startVoiceRecognition(
       (transcript) => {
-        console.log('✅ Got input:', transcript);
+        console.log('✅ Got transcript:', transcript);
         clearTimeout(listeningTimeoutRef.current);
         setListening(false);
         
         if (transcript && transcript.trim()) {
+          console.log('Asking question...');
           askQuestion(transcript, true);
         } else {
-          console.log('⚠️ Empty transcript, retrying...');
+          console.log('Empty, retrying...');
           setTimeout(() => startListeningCycle(), 500);
         }
       },
@@ -105,7 +103,7 @@ function App() {
         setListening(false);
         
         if (conversationModeRef.current) {
-          console.log('🔄 Retrying in 1 second...');
+          console.log('Retrying in 1 sec...');
           setTimeout(() => startListeningCycle(), 1000);
         }
       }
@@ -113,12 +111,12 @@ function App() {
     
     if (success) {
       listeningTimeoutRef.current = setTimeout(() => {
-        console.log('⏱️ 5 seconds up, stopping...');
+        console.log('⏱️ 5 sec up, no speech');
         stopVoiceRecognition();
         setListening(false);
         
         if (conversationModeRef.current) {
-          console.log('🔄 No speech detected, retrying...');
+          console.log('Retrying...');
           setTimeout(() => startListeningCycle(), 1000);
         }
       }, 5000);
@@ -149,6 +147,8 @@ function App() {
     if (!text || !text.trim() || !sessionId || loading) return;
     
     const q = text.trim();
+    console.log('📤 Asking:', q);
+    
     setMessages(prev => [...prev, {
       type: 'user',
       content: q,
@@ -161,7 +161,9 @@ function App() {
     setError('');
     
     try {
+      console.log('🤖 Querying API...');
       const response = await queryDocument(sessionId, q, language);
+      console.log('✅ Got response');
       
       setMessages(prev => [...prev, {
         type: 'ai',
@@ -169,11 +171,16 @@ function App() {
         timestamp: new Date()
       }]);
       
-      if (conversationModeRef.current || isVoice) {
+      // ALWAYS play voice in conversation mode
+      if (conversationModeRef.current) {
+        console.log('🔊 Playing voice...');
+        await playVoice(response.answer);
+      } else if (isVoice) {
         await playVoice(response.answer);
       }
     } catch (err) {
       const msg = err.response?.data?.detail || err.message || 'Failed';
+      console.error('Error:', msg);
       setError(msg);
       setMessages(prev => [...prev, {
         type: 'error',
@@ -188,17 +195,26 @@ function App() {
   const playVoice = async (text) => {
     try {
       setSpeaking(true);
-      console.log('🔊 Playing response...');
+      console.log('🎵 Generating TTS...');
       const audioBlob = await textToSpeech(text, language);
+      console.log('✅ TTS ready, size:', audioBlob.size);
+      
       const audioUrl = URL.createObjectURL(audioBlob);
       
       if (audioRef.current) {
         audioRef.current.src = audioUrl;
+        console.log('▶️ Playing...');
         await audioRef.current.play();
+        console.log('🔊 Audio started');
       }
     } catch (err) {
-      console.error('TTS error:', err);
+      console.error('❌ TTS error:', err);
       setSpeaking(false);
+      
+      // If TTS fails, continue loop anyway
+      if (conversationModeRef.current) {
+        setTimeout(() => startCountdownAndListen(), 1000);
+      }
     }
   };
   
@@ -229,13 +245,13 @@ function App() {
   
   const toggleConversationMode = () => {
     if (!conversationMode) {
-      console.log('🔴 Entering conversation mode');
+      console.log('🔴 START conversation mode');
       setConversationMode(true);
       if (sessionId) {
         setTimeout(() => startNormalListening(), 500);
       }
     } else {
-      console.log('⚫ Exiting conversation mode');
+      console.log('⚫ STOP conversation mode');
       setConversationMode(false);
       setCountdown(0);
       
@@ -273,35 +289,31 @@ function App() {
   };
   
   return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden">
-      {/* Volcanic Lava Background */}
+    <div className="min-h-screen text-white relative">
+      {/* Lava Background */}
       <div 
         className="fixed inset-0 z-0"
         style={{
-          backgroundImage: 'url(https://images.unsplash.com/photo-1603794067602-9feaa4f70e0c?q=80&w=2070)',
+          backgroundImage: 'url(https://images.unsplash.com/photo-1603794067602-9feaa4f70e0c?w=1920&q=80)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          filter: 'brightness(0.4) contrast(1.2)',
+          filter: 'brightness(0.5)',
         }}
       />
       
-      {/* Content */}
       <div className="relative z-10">
-        <header className="border-b border-red-600/30 bg-black/60 backdrop-blur-xl sticky top-0 z-20">
+        <header className="border-b border-orange-600/50 bg-black/80 sticky top-0 z-20">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="text-4xl">🌋</div>
                 <div>
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-500 via-red-500 to-orange-600 bg-clip-text text-transparent">
-                    VolcanoRAG
-                  </h1>
+                  <h1 className="text-2xl font-bold" style={{color: '#FF4500'}}>VolcanoRAG</h1>
                   <p className="text-sm text-gray-300">AI Voice Assistant</p>
                 </div>
               </div>
               
-              <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg bg-gray-900/80 hover:bg-gray-800/80 border border-orange-500/30">
+              <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg bg-gray-900 hover:bg-gray-800 border border-orange-600/30">
                 {darkMode ? <Sun size={20} /> : <Moon size={20} />}
               </button>
             </div>
@@ -312,9 +324,10 @@ function App() {
                   onClick={toggleConversationMode}
                   className={`px-6 py-3 rounded-lg flex items-center gap-3 font-bold shadow-lg ${
                     conversationMode 
-                      ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-orange-500/50 animate-pulse' 
-                      : 'bg-gray-900/80 text-gray-300 hover:bg-gray-800/80 border border-orange-500/30'
+                      ? 'animate-pulse' 
+                      : 'bg-gray-900 hover:bg-gray-800 border border-orange-600/30'
                   }`}
+                  style={conversationMode ? {background: 'linear-gradient(to right, #FF4500, #FF6347)'} : {}}
                 >
                   {conversationMode ? (
                     <>
@@ -333,34 +346,34 @@ function App() {
                 <select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className="px-4 py-3 rounded-lg bg-gray-900/80 border border-orange-500/30 font-semibold"
+                  className="px-4 py-3 rounded-lg bg-gray-900 border border-orange-600/30 font-semibold"
                 >
                   <option value="en">🇺🇸 English</option>
                   <option value="ta">🇮🇳 Tanglish</option>
                 </select>
                 
                 {countdown > 0 && (
-                  <div className="px-4 py-2 bg-orange-600 rounded-lg flex items-center gap-2">
+                  <div className="px-4 py-2 rounded-lg flex items-center gap-2" style={{backgroundColor: '#FF4500'}}>
                     <span className="font-bold text-2xl">{countdown}</span>
                   </div>
                 )}
                 
                 {listening && (
-                  <div className="px-4 py-2 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse">
+                  <div className="px-4 py-2 rounded-lg flex items-center gap-2 animate-pulse" style={{backgroundColor: '#FF4500'}}>
                     <div className="w-3 h-3 bg-white rounded-full animate-ping" />
                     <span className="font-bold">LISTENING</span>
                   </div>
                 )}
                 
                 {loading && (
-                  <div className="px-4 py-2 bg-orange-600 rounded-lg flex items-center gap-2">
+                  <div className="px-4 py-2 rounded-lg flex items-center gap-2" style={{backgroundColor: '#FF6347'}}>
                     <Loader size={16} className="animate-spin" />
                     <span className="font-bold">THINKING</span>
                   </div>
                 )}
                 
                 {speaking && (
-                  <div className="px-4 py-2 bg-green-600 rounded-lg flex items-center gap-2 animate-pulse">
+                  <div className="px-4 py-2 rounded-lg flex items-center gap-2 animate-pulse" style={{backgroundColor: '#32CD32'}}>
                     <Volume2 size={16} className="animate-bounce" />
                     <span className="font-bold">SPEAKING</span>
                   </div>
@@ -370,8 +383,8 @@ function App() {
           </div>
           
           {conversationMode && (
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 py-3 px-4 text-center font-bold">
-              🎤 CONTINUOUS MODE - Auto-listening after each response! 🔊
+            <div className="py-3 px-4 text-center font-bold" style={{background: 'linear-gradient(to right, #FF4500, #FF6347)'}}>
+              🎤 CONTINUOUS MODE - Auto-listening after response! 🔊
             </div>
           )}
         </header>
@@ -388,15 +401,15 @@ function App() {
               {processing && <ProcessingStatus />}
               
               {error && (
-                <div className="mt-4 p-4 bg-red-600/20 border border-red-500 rounded-lg backdrop-blur-sm">
-                  <AlertCircle size={20} className="text-red-400 inline mr-2" />
-                  <span className="text-red-400">{error}</span>
+                <div className="mt-4 p-4 rounded-lg border" style={{backgroundColor: '#1a1a1a', borderColor: '#FF4500'}}>
+                  <AlertCircle size={20} className="inline mr-2" style={{color: '#FF4500'}} />
+                  <span style={{color: '#FF4500'}}>{error}</span>
                 </div>
               )}
             </div>
           ) : (
             <div className="grid gap-6">
-              <div className="bg-gray-900/60 backdrop-blur-xl rounded-lg p-4 border border-orange-500/30">
+              <div className="rounded-lg p-4 border" style={{backgroundColor: '#1a1a1a', borderColor: '#FF6347'}}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <CheckCircle className="text-green-500" size={24} />
@@ -412,7 +425,8 @@ function App() {
                       setMessages([]);
                       setFileName('');
                     }}
-                    className="px-4 py-2 bg-red-600 hover:bg-orange-600 rounded-lg font-semibold"
+                    className="px-4 py-2 rounded-lg font-semibold"
+                    style={{backgroundColor: '#FF4500'}}
                   >
                     New
                   </button>
@@ -420,13 +434,13 @@ function App() {
               </div>
               
               {error && (
-                <div className="p-4 bg-red-600/20 border border-red-500 rounded-lg backdrop-blur-sm">
-                  <AlertCircle size={20} className="text-red-400 inline mr-2" />
-                  <span className="text-red-400">{error}</span>
+                <div className="p-4 rounded-lg border" style={{backgroundColor: '#1a1a1a', borderColor: '#FF4500'}}>
+                  <AlertCircle size={20} className="inline mr-2" style={{color: '#FF4500'}} />
+                  <span style={{color: '#FF4500'}}>{error}</span>
                 </div>
               )}
               
-              <div className="bg-gray-900/60 backdrop-blur-xl rounded-lg border border-orange-500/30 min-h-[400px] max-h-[500px] overflow-y-auto p-6">
+              <div className="rounded-lg border min-h-[400px] max-h-[500px] overflow-y-auto p-6" style={{backgroundColor: '#1a1a1a', borderColor: '#FF6347'}}>
                 {messages.length === 0 ? (
                   <div className="h-full flex items-center justify-center">
                     <div className="text-center text-gray-400">
@@ -438,12 +452,19 @@ function App() {
                   <div className="space-y-4">
                     {messages.map((msg, idx) => (
                       <div key={idx} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-lg p-4 backdrop-blur-sm ${
-                          msg.type === 'user' ? 'bg-gradient-to-r from-orange-600 to-red-600' :
-                          msg.type === 'ai' ? 'bg-gray-800/80 border border-orange-500/30' :
-                          msg.type === 'system' ? 'bg-blue-600/20 border border-blue-500/30' :
-                          'bg-red-600/20 border border-red-500/30'
-                        }`}>
+                        <div 
+                          className={`max-w-[80%] rounded-lg p-4`}
+                          style={{
+                            background: msg.type === 'user' 
+                              ? 'linear-gradient(to right, #FF4500, #FF6347)' 
+                              : msg.type === 'ai' 
+                              ? '#2a2a2a' 
+                              : msg.type === 'system'
+                              ? '#1e3a8a'
+                              : '#7f1d1d',
+                            border: msg.type === 'ai' ? '1px solid #FF6347' : 'none'
+                          }}
+                        >
                           {msg.isVoice && <div className="text-xs opacity-70 mb-2">🎤 Voice</div>}
                           <p className="whitespace-pre-wrap">{msg.content}</p>
                           <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/10">
@@ -451,7 +472,8 @@ function App() {
                             {msg.type === 'ai' && !conversationMode && (
                               <button
                                 onClick={() => readAloud(msg.content)}
-                                className="text-xs flex items-center gap-1 px-2 py-1 bg-white/10 rounded hover:bg-white/20"
+                                className="text-xs flex items-center gap-1 px-2 py-1 rounded"
+                                style={{backgroundColor: '#FF4500'}}
                               >
                                 {speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
                                 Read
@@ -472,7 +494,11 @@ function App() {
                     type="button"
                     onClick={startNormalListening}
                     disabled={loading || listening}
-                    className={`p-3 rounded-lg ${listening ? 'bg-red-600 animate-pulse' : 'bg-gray-900/80 hover:bg-gray-800/80 border border-orange-500/30'}`}
+                    className={`p-3 rounded-lg border ${listening ? 'animate-pulse' : ''}`}
+                    style={{
+                      backgroundColor: listening ? '#FF4500' : '#1a1a1a',
+                      borderColor: '#FF6347'
+                    }}
                   >
                     {listening ? <MicOff size={20} /> : <Mic size={20} />}
                   </button>
@@ -482,14 +508,16 @@ function App() {
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     placeholder={listening ? "Listening..." : "Ask a question..."}
-                    className="flex-1 px-4 py-3 bg-gray-900/80 backdrop-blur-sm rounded-lg border border-orange-500/30 focus:border-orange-500 focus:outline-none"
+                    className="flex-1 px-4 py-3 rounded-lg border focus:outline-none"
+                    style={{backgroundColor: '#1a1a1a', borderColor: '#FF6347'}}
                     disabled={loading || listening}
                   />
                   
                   <button
                     type="submit"
                     disabled={loading || !question.trim() || listening}
-                    className="px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 disabled:opacity-50 rounded-lg font-semibold"
+                    className="px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
+                    style={{background: 'linear-gradient(to right, #FF4500, #FF6347)'}}
                   >
                     {loading ? <Loader size={20} className="animate-spin" /> : <Send size={20} />}
                   </button>
@@ -497,7 +525,7 @@ function App() {
               )}
               
               {conversationMode && (
-                <div className="bg-orange-600/20 border-2 border-orange-500 rounded-lg p-6 text-center backdrop-blur-sm">
+                <div className="rounded-lg p-6 text-center border-2" style={{backgroundColor: '#1a1a1a', borderColor: '#FF4500'}}>
                   {countdown > 0 ? (
                     <>
                       <p className="text-xl font-bold mb-2">⏳ Get ready... {countdown}</p>
@@ -506,12 +534,12 @@ function App() {
                   ) : listening ? (
                     <>
                       <p className="text-xl font-bold mb-2">🎤 Speak now! (5 seconds)</p>
-                      <p className="text-sm text-gray-300">Ask your question clearly</p>
+                      <p className="text-sm text-gray-300">Ask your question</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-xl font-bold mb-2">🔊 AI is responding...</p>
-                      <p className="text-sm text-gray-300">Listen to the answer</p>
+                      <p className="text-xl font-bold mb-2">🔊 AI responding...</p>
+                      <p className="text-sm text-gray-300">Listen to answer</p>
                     </>
                   )}
                 </div>
