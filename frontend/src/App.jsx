@@ -52,8 +52,9 @@ function App() {
     if (!audio) return;
     
     const handleAudioEnd = () => {
-      console.log('✅ Audio finished');
+      console.log('✅ Voice finished playing');
       setSpeaking(false);
+      setStatusMessage('');
       
       if (conversationModeRef.current && sessionId) {
         console.log('Starting 10 sec countdown...');
@@ -68,7 +69,7 @@ function App() {
   const start10SecCountdown = () => {
     let count = 10;
     setCountdown(count);
-    setStatusMessage('Ready to ask your next question in...');
+    setStatusMessage('Ready to ask your next question in');
     
     countdownTimerRef.current = setInterval(() => {
       count--;
@@ -88,7 +89,7 @@ function App() {
     
     console.log('🎤 Listening for 7 seconds...');
     setListening(true);
-    setStatusMessage('Listening... (7 seconds)');
+    setStatusMessage('Listening');
     let transcript = '';
     
     const success = startVoiceRecognition(
@@ -109,6 +110,7 @@ function App() {
         
         if (transcript && transcript.trim()) {
           console.log('✅ Speech detected:', transcript);
+          setStatusMessage('');
           askQuestion(transcript, true);
         } else {
           console.log('❌ No speech detected');
@@ -165,12 +167,13 @@ function App() {
     
     setQuestion('');
     setLoading(true);
-    setStatusMessage('Thinking...');
+    setStatusMessage('Thinking');
     setError('');
     
     try {
+      console.log('🤖 Calling API...');
       const response = await queryDocument(sessionId, q, language);
-      console.log('✅ Got response');
+      console.log('✅ Got response:', response.answer.substring(0, 50));
       
       setMessages(prev => [...prev, {
         type: 'ai',
@@ -180,10 +183,15 @@ function App() {
       
       setLoading(false);
       
-      // ALWAYS read response in conversation mode
-      if (conversationModeRef.current || isVoice) {
-        setStatusMessage('Speaking response...');
-        await playVoice(response.answer);
+      // FORCE voice reading in conversation mode
+      if (conversationModeRef.current) {
+        console.log('🔊 FORCE READING RESPONSE');
+        setStatusMessage('Reading response');
+        setTimeout(() => {
+          playVoice(response.answer);
+        }, 500);
+      } else if (isVoice) {
+        playVoice(response.answer);
       }
     } catch (err) {
       const msg = err.response?.data?.detail || err.message || 'Failed';
@@ -202,24 +210,36 @@ function App() {
   const playVoice = async (text) => {
     try {
       setSpeaking(true);
-      console.log('🔊 Generating TTS...');
+      console.log('🎵 Generating TTS for:', text.substring(0, 50) + '...');
       const audioBlob = await textToSpeech(text, language);
-      console.log('✅ TTS ready');
+      console.log('✅ TTS blob size:', audioBlob.size);
+      
+      if (audioBlob.size === 0) {
+        throw new Error('Empty audio blob');
+      }
       
       const audioUrl = URL.createObjectURL(audioBlob);
       
       if (audioRef.current) {
         audioRef.current.src = audioUrl;
-        console.log('▶️ Playing audio...');
-        await audioRef.current.play();
+        console.log('▶️ Starting playback...');
+        
+        try {
+          await audioRef.current.play();
+          console.log('🔊 Audio playing');
+        } catch (playErr) {
+          console.error('Play error:', playErr);
+          throw playErr;
+        }
       }
     } catch (err) {
-      console.error('❌ TTS error:', err);
+      console.error('❌ TTS/Play error:', err);
       setSpeaking(false);
-      setStatusMessage('');
+      setStatusMessage('Voice error, continuing...');
       
+      // Continue loop even if voice fails
       if (conversationModeRef.current) {
-        setTimeout(() => start10SecCountdown(), 1000);
+        setTimeout(() => start10SecCountdown(), 2000);
       }
     }
   };
@@ -296,21 +316,25 @@ function App() {
   const theme = darkMode ? {
     primary: '#FF4500',
     secondary: '#FF6347',
-    bg: '#1a1a1a',
-    bgHeader: '#000000',
+    bg: 'rgba(26, 26, 26, 0.95)',
+    bgHeader: 'rgba(0, 0, 0, 0.9)',
     border: '#FF6347',
     text: '#ffffff',
     textSecondary: '#d1d5db',
-    bgImage: nightBg
+    bgImage: nightBg,
+    containerBg: 'rgba(26, 26, 26, 0.95)',
+    shadow: '0 4px 6px -1px rgba(255, 69, 0, 0.3), 0 2px 4px -1px rgba(255, 69, 0, 0.2)'
   } : {
     primary: '#3B82F6',
     secondary: '#60A5FA',
-    bg: '#F3F4F6',
-    bgHeader: '#EFF6FF',
+    bg: 'rgba(243, 244, 246, 0.95)',
+    bgHeader: 'rgba(239, 246, 255, 0.95)',
     border: '#3B82F6',
-    text: '#1F2937',
-    textSecondary: '#6B7280',
-    bgImage: dayBg
+    text: '#1e3a8a',
+    textSecondary: '#3b82f6',
+    bgImage: dayBg,
+    containerBg: 'rgba(255, 255, 255, 0.95)',
+    shadow: '0 4px 6px -1px rgba(59, 130, 246, 0.3), 0 2px 4px -1px rgba(59, 130, 246, 0.2)'
   };
   
   return (
@@ -328,9 +352,10 @@ function App() {
       
       <div className="relative z-10">
         <header className="border-b sticky top-0 z-20" style={{
-          backgroundColor: darkMode ? 'rgba(0,0,0,0.8)' : 'rgba(239,246,255,0.9)',
+          backgroundColor: theme.bgHeader,
           borderColor: `${theme.border}50`,
-          backdropFilter: 'blur(10px)'
+          backdropFilter: 'blur(10px)',
+          boxShadow: theme.shadow
         }}>
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between mb-4">
@@ -362,19 +387,19 @@ function App() {
               <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={toggleConversationMode}
-                  className="px-6 py-3 rounded-lg flex items-center gap-3 font-bold shadow-lg"
+                  className="px-6 py-3 rounded-lg flex items-center gap-3 font-bold"
                   style={{
                     background: conversationMode 
                       ? `linear-gradient(to right, ${theme.primary}, ${theme.secondary})`
                       : theme.bg,
                     border: conversationMode ? 'none' : `1px solid ${theme.border}`,
-                    animation: conversationMode ? 'pulse 2s infinite' : 'none'
+                    boxShadow: conversationMode ? theme.shadow : 'none'
                   }}
                 >
                   {conversationMode ? (
                     <>
                       <Radio size={24} />
-                      <span>🔴 LIVE</span>
+                      <span style={{color: '#fff'}}>🔴 LIVE</span>
                       <Zap size={20} />
                     </>
                   ) : (
@@ -432,7 +457,7 @@ function App() {
             <div className="py-3 px-4 text-center font-bold text-white" style={{
               background: `linear-gradient(to right, ${theme.primary}, ${theme.secondary})`
             }}>
-              🎤 VOICE MODE ACTIVE - {statusMessage || 'Continuous conversation enabled'} 🔊
+              🎤 VOICE MODE - {statusMessage || 'Continuous conversation enabled'} 🔊
             </div>
           )}
         </header>
@@ -450,8 +475,9 @@ function App() {
               
               {error && (
                 <div className="mt-4 p-4 rounded-lg border" style={{
-                  backgroundColor: theme.bg,
-                  borderColor: theme.primary
+                  backgroundColor: theme.containerBg,
+                  borderColor: theme.primary,
+                  boxShadow: theme.shadow
                 }}>
                   <AlertCircle size={20} className="inline mr-2" style={{color: theme.primary}} />
                   <span style={{color: theme.primary}}>{error}</span>
@@ -461,8 +487,9 @@ function App() {
           ) : (
             <div className="grid gap-6">
               <div className="rounded-lg p-4 border" style={{
-                backgroundColor: theme.bg,
-                borderColor: theme.border
+                backgroundColor: theme.containerBg,
+                borderColor: theme.border,
+                boxShadow: theme.shadow
               }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -489,8 +516,9 @@ function App() {
               
               {error && (
                 <div className="p-4 rounded-lg border" style={{
-                  backgroundColor: theme.bg,
-                  borderColor: theme.primary
+                  backgroundColor: theme.containerBg,
+                  borderColor: theme.primary,
+                  boxShadow: theme.shadow
                 }}>
                   <AlertCircle size={20} className="inline mr-2" style={{color: theme.primary}} />
                   <span style={{color: theme.primary}}>{error}</span>
@@ -498,8 +526,9 @@ function App() {
               )}
               
               <div className="rounded-lg border min-h-[400px] max-h-[500px] overflow-y-auto p-6" style={{
-                backgroundColor: theme.bg,
-                borderColor: theme.border
+                backgroundColor: theme.containerBg,
+                borderColor: theme.border,
+                boxShadow: theme.shadow
               }}>
                 {messages.length === 0 ? (
                   <div className="h-full flex items-center justify-center">
@@ -518,12 +547,13 @@ function App() {
                             background: msg.type === 'user' 
                               ? `linear-gradient(to right, ${theme.primary}, ${theme.secondary})`
                               : msg.type === 'ai' 
-                              ? darkMode ? '#2a2a2a' : '#FFFFFF'
+                              ? darkMode ? 'rgba(42, 42, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'
                               : msg.type === 'system'
-                              ? darkMode ? '#1e3a8a' : '#DBEAFE'
-                              : darkMode ? '#7f1d1d' : '#FEE2E2',
+                              ? darkMode ? 'rgba(30, 58, 138, 0.9)' : 'rgba(219, 234, 254, 0.95)'
+                              : darkMode ? 'rgba(127, 29, 29, 0.9)' : 'rgba(254, 226, 226, 0.95)',
                             border: msg.type === 'ai' ? `1px solid ${theme.border}` : 'none',
-                            color: msg.type === 'user' ? '#FFFFFF' : theme.text
+                            color: msg.type === 'user' ? '#FFFFFF' : theme.text,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                           }}
                         >
                           {msg.isVoice && <div className="text-xs opacity-70 mb-2">🎤 Voice</div>}
@@ -557,8 +587,9 @@ function App() {
                     disabled={loading || listening}
                     className="p-3 rounded-lg border"
                     style={{
-                      backgroundColor: listening ? theme.primary : theme.bg,
-                      borderColor: theme.border
+                      backgroundColor: listening ? theme.primary : theme.containerBg,
+                      borderColor: theme.border,
+                      boxShadow: theme.shadow
                     }}
                   >
                     {listening ? <MicOff size={20} /> : <Mic size={20} />}
@@ -571,9 +602,10 @@ function App() {
                     placeholder={listening ? "Listening..." : "Ask a question..."}
                     className="flex-1 px-4 py-3 rounded-lg border focus:outline-none"
                     style={{
-                      backgroundColor: theme.bg,
+                      backgroundColor: theme.containerBg,
                       borderColor: theme.border,
-                      color: theme.text
+                      color: theme.text,
+                      boxShadow: theme.shadow
                     }}
                     disabled={loading || listening}
                   />
@@ -582,7 +614,10 @@ function App() {
                     type="submit"
                     disabled={loading || !question.trim() || listening}
                     className="px-6 py-3 rounded-lg font-semibold disabled:opacity-50 text-white"
-                    style={{background: `linear-gradient(to right, ${theme.primary}, ${theme.secondary})`}}
+                    style={{
+                      background: `linear-gradient(to right, ${theme.primary}, ${theme.secondary})`,
+                      boxShadow: theme.shadow
+                    }}
                   >
                     {loading ? <Loader size={20} className="animate-spin" /> : <Send size={20} />}
                   </button>
@@ -591,8 +626,9 @@ function App() {
               
               {conversationMode && (
                 <div className="rounded-lg p-6 text-center border-2" style={{
-                  backgroundColor: theme.bg,
-                  borderColor: theme.primary
+                  backgroundColor: theme.containerBg,
+                  borderColor: theme.primary,
+                  boxShadow: theme.shadow
                 }}>
                   {countdown > 0 ? (
                     <>
