@@ -315,7 +315,7 @@ function App() {
   // Theme colors
   const theme = darkMode ? {
     primary: '#FF4500',
-    secondary: '#FF6347',
+    secondary: '#ff4747',
     bg: 'rgba(26, 26, 26, 0.95)',
     bgHeader: 'rgba(0, 0, 0, 0.9)',
     border: '#FF6347',
@@ -333,7 +333,7 @@ function App() {
     text: '#1e3a8a',
     textSecondary: '#3b82f6',
     bgImage: dayBg,
-    containerBg: 'rgba(255, 255, 255, 0.95)',
+    containerBg: 'rgba(255, 255, 255, 5)',
     shadow: '0 4px 6px -1px rgba(59, 130, 246, 0.3), 0 2px 4px -1px rgba(59, 130, 246, 0.2)'
   };
   
@@ -346,7 +346,7 @@ function App() {
           backgroundImage: `url(${theme.bgImage})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: darkMode ? 'brightness(0.5)' : 'brightness(0.7)',
+          filter: darkMode ? 'brightness(0.8)' : 'brightness(0.4)',
         }}
       />
       
@@ -354,7 +354,7 @@ function App() {
         <header className="border-b sticky top-0 z-20" style={{
           backgroundColor: theme.bgHeader,
           borderColor: `${theme.border}50`,
-          backdropFilter: 'blur(10px)',
+          backdropFilter: 'blur(50px)',
           boxShadow: theme.shadow
         }}>
           <div className="container mx-auto px-4 py-4">
