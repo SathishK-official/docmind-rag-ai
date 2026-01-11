@@ -8,6 +8,7 @@ import FileUpload from './components/FileUpload';
 import ProcessingStatus from './components/ProcessingStatus';
 import { uploadDocument, queryDocument, textToSpeech } from './services/api';
 import { startVoiceRecognition, stopVoiceRecognition } from './services/speechRecognition';
+import backgroundImage from './components/background_image.jpg';
 
 function App() {
   const [sessionId, setSessionId] = useState(null);
@@ -294,7 +295,7 @@ function App() {
       <div 
         className="fixed inset-0 z-0"
         style={{
-          backgroundImage: 'url(https://images.unsplash.com/photo-1603794067602-9feaa4f70e0c?w=1920&q=80)',
+          backgroundImage: `url(${backgroundImage})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           filter: 'brightness(0.5)',
