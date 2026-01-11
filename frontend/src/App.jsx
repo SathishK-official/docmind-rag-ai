@@ -9,6 +9,8 @@ import ProcessingStatus from './components/ProcessingStatus';
 import { uploadDocument, queryDocument, textToSpeech } from './services/api';
 import { startVoiceRecognition, stopVoiceRecognition } from './services/speechRecognition';
 
+const WAKE_WORD = 'volcano'; // Wake word to activate
+
 function App() {
   const [sessionId, setSessionId] = useState(null);
   const [fileName, setFileName] = useState('');
@@ -20,16 +22,22 @@ function App() {
   const [language, setLanguage] = useState('en');
   const [conversationMode, setConversationMode] = useState(false);
   const [listening, setListening] = useState(false);
+  const [waitingForWakeWord, setWaitingForWakeWord] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [error, setError] = useState('');
   
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
   const conversationModeRef = useRef(false);
+  const waitingForWakeWordRef = useRef(false);
   
   useEffect(() => {
     conversationModeRef.current = conversationMode;
   }, [conversationMode]);
+  
+  useEffect(() => {
+    waitingForWakeWordRef.current = waitingForWakeWord;
+  }, [waitingForWakeWord]);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,9 +56,14 @@ function App() {
     if (!audio) return;
     
     const handleAudioEnd = () => {
+      console.log('🔊 Audio finished');
       setSpeaking(false);
+      
+      // After speaking, wait for wake word
       if (conversationModeRef.current && sessionId) {
-        setTimeout(() => startListening(), 1000);
+        console.log('⏳ Waiting for wake word:', WAKE_WORD);
+        setWaitingForWakeWord(true);
+        setTimeout(() => startListeningForWakeWord(), 1000);
       }
     };
     
@@ -68,7 +81,7 @@ function App() {
       setFileName(result.filename);
       setMessages([{
         type: 'system',
-        content: `✓ "${result.filename}" ready! ${result.num_chunks} chunks, ${result.num_images_processed} images processed.`,
+        content: `✓ "${result.filename}" ready!`,
         timestamp: new Date()
       }]);
     } catch (err) {
@@ -102,6 +115,7 @@ function App() {
         timestamp: new Date()
       }]);
       
+      // Always play voice in conversation mode
       if (conversationModeRef.current || isVoice) {
         await playVoice(response.answer);
       }
@@ -121,6 +135,7 @@ function App() {
   const playVoice = async (text) => {
     try {
       setSpeaking(true);
+      console.log('🔊 Playing voice response...');
       const audioBlob = await textToSpeech(text, language);
       const audioUrl = URL.createObjectURL(audioBlob);
       
@@ -134,19 +149,82 @@ function App() {
     }
   };
   
-  const startListening = () => {
+  const startListeningForWakeWord = () => {
+    if (listening) return;
+    
+    console.log('🎤 Listening for wake word...');
+    const success = startVoiceRecognition(
+      (transcript) => {
+        setListening(false);
+        const text = transcript.toLowerCase();
+        
+        console.log('Heard:', text);
+        
+        // Check for wake word
+        if (text.includes(WAKE_WORD)) {
+          console.log('✅ Wake word detected!');
+          setWaitingForWakeWord(false);
+          
+          // Remove wake word from text
+          const questionText = text.replace(WAKE_WORD, '').trim();
+          
+          if (questionText) {
+            // Question included with wake word
+            askQuestion(questionText, true);
+          } else {
+            // Just wake word, listen for actual question
+            setTimeout(() => startListeningForQuestion(), 500);
+          }
+        } else {
+          // No wake word, keep waiting
+          console.log('⚠️ No wake word, listening again...');
+          setTimeout(() => startListeningForWakeWord(), 500);
+        }
+      },
+      (errorMsg) => {
+        setListening(false);
+        // On error, try again
+        if (conversationModeRef.current && waitingForWakeWordRef.current) {
+          setTimeout(() => startListeningForWakeWord(), 1000);
+        }
+      }
+    );
+    
+    if (success) {
+      setListening(true);
+    }
+  };
+  
+  const startListeningForQuestion = () => {
+    if (listening) return;
+    
+    console.log('🎤 Listening for question...');
+    const success = startVoiceRecognition(
+      (transcript) => {
+        setListening(false);
+        askQuestion(transcript, true);
+      },
+      (errorMsg) => {
+        setError(errorMsg);
+        setListening(false);
+      }
+    );
+    
+    if (success) {
+      setListening(true);
+    }
+  };
+  
+  const startNormalListening = () => {
     if (listening) return;
     
     const success = startVoiceRecognition(
       (transcript) => {
         setListening(false);
         
-        // KEY FIX: Direct execution in conversation mode
         if (conversationModeRef.current) {
-          // Don't set question state, directly ask
           askQuestion(transcript, true);
         } else {
-          // Normal mode: put in text box
           setQuestion(transcript);
         }
       },
@@ -164,12 +242,16 @@ function App() {
   
   const toggleConversationMode = () => {
     if (!conversationMode) {
+      console.log('🔴 Entering conversation mode');
       setConversationMode(true);
       if (sessionId) {
-        setTimeout(() => startListening(), 500);
+        setTimeout(() => startNormalListening(), 500);
       }
     } else {
+      console.log('⚫ Exiting conversation mode');
       setConversationMode(false);
+      setWaitingForWakeWord(false);
+      
       if (listening) {
         stopVoiceRecognition();
         setListening(false);
@@ -250,7 +332,14 @@ function App() {
                 <option value="ta">🇮🇳 Tanglish</option>
               </select>
               
-              {listening && (
+              {waitingForWakeWord && (
+                <div className="px-4 py-2 bg-yellow-600 rounded-lg flex items-center gap-2 animate-pulse">
+                  <div className="w-3 h-3 bg-white rounded-full animate-ping" />
+                  <span className="font-bold">SAY "{WAKE_WORD.toUpperCase()}"</span>
+                </div>
+              )}
+              
+              {listening && !waitingForWakeWord && (
                 <div className="px-4 py-2 bg-red-600 rounded-lg flex items-center gap-2 animate-pulse">
                   <div className="w-3 h-3 bg-white rounded-full animate-ping" />
                   <span className="font-bold">LISTENING</span>
@@ -276,7 +365,10 @@ function App() {
         
         {conversationMode && (
           <div className="bg-gradient-to-r from-red-600 to-orange-600 py-3 px-4 text-center font-bold">
-            🎤 VOICE MODE ACTIVE - Speak naturally! 🔊
+            {waitingForWakeWord 
+              ? `🎤 Say "${WAKE_WORD.toUpperCase()}" then ask your question! 🔊`
+              : '🎤 VOICE MODE ACTIVE - Speak naturally! 🔊'
+            }
           </div>
         )}
       </header>
@@ -336,7 +428,8 @@ function App() {
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center text-gray-500">
                     <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                    <p className="text-lg">Ask about your document!</p>
+                    <p className="text-lg mb-2">Ask about your document!</p>
+                    <p className="text-sm">💡 Voice Mode uses wake word: <strong>"{WAKE_WORD}"</strong></p>
                   </div>
                 </div>
               ) : (
@@ -375,7 +468,7 @@ function App() {
               <form onSubmit={handleSubmit} className="flex gap-2">
                 <button
                   type="button"
-                  onClick={startListening}
+                  onClick={startNormalListening}
                   disabled={loading || listening}
                   className={`p-3 rounded-lg ${listening ? 'bg-red-600 animate-pulse' : 'bg-gray-800 hover:bg-gray-700'}`}
                 >
@@ -403,8 +496,17 @@ function App() {
             
             {conversationMode && (
               <div className="bg-orange-600/20 border-2 border-orange-500 rounded-lg p-6 text-center">
-                <p className="text-xl font-bold">🎤 Speak now!</p>
-                <p className="text-sm text-gray-300 mt-2">AI responds automatically</p>
+                {waitingForWakeWord ? (
+                  <>
+                    <p className="text-xl font-bold mb-2">🎤 Say "{WAKE_WORD.toUpperCase()}" to ask!</p>
+                    <p className="text-sm text-gray-300">Example: "{WAKE_WORD}, what is this document about?"</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xl font-bold mb-2">🎤 Speak your question!</p>
+                    <p className="text-sm text-gray-300">AI will respond with voice</p>
+                  </>
+                )}
               </div>
             )}
           </div>
